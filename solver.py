@@ -4,7 +4,7 @@
 
 # note: How this will work on sudoku's other than 9x9 is untested. It
 # won't work on underspecified puzzles - those with more than one solution.
-# Is it possible to have puzzles with a unique solution, but that require
+# Is it possible to have puzzles with a unique solution, but that requires
 # you to make a guess and back-track if you're wrong?
 
 import sys
@@ -264,7 +264,7 @@ class Sudoku:
     # a closed set is my made-up term for a set of n squares
     # that together can hold n possible values. Therefore, it's
     # certain that the those squares contain those values in some
-    # order and we can eliminate those values from the remaider of
+    # order and we can eliminate those values from the remainder of
     # the row, column or box.
     # returns progress, if any or 0 to represent no progress
     def eliminate_by_closed_subsets(self, squares):
@@ -332,13 +332,14 @@ def read_sudoku_from_file(filename):
         for line in f:
             if line.startswith("#"): continue
             line = line.strip("\n")
-            ncol = len(line)
-            for col in range(0,ncol):
-                if (line[col].isdigit()):
-                    board.append(Square(row, col, value=int(line[col])))
-                else:
-                    board.append(Square(row, col))
-            row += 1
+            if line:
+                ncol = len(line)
+                for col in range(0,ncol):
+                    if (line[col].isdigit()):
+                        board.append(Square(row, col, value=int(line[col])))
+                    else:
+                        board.append(Square(row, col))
+                row += 1
     return Sudoku(row,ncol,board)
 
 
