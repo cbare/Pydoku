@@ -64,6 +64,11 @@ class Square:
         self.value = value
         self.values = {value}
 
+    def set_possible_values(self, values):
+        self.values = values
+        if len(values)==1:
+            self.value = list(values)[0]
+
     def npossibilities(self):
         """Return the number of possible values for this square."""
         return len(self.values)
@@ -85,6 +90,12 @@ class Sudoku:
     
     def get_square(self, i, j):
         return self.board[ i*self.m + j ]
+
+    def solved(self):
+        for square in self.board:
+            if not square.solved():
+                return False
+        return True
 
     def solve(self):
         unsolved = 0
@@ -148,6 +159,9 @@ class Sudoku:
                 for square in self.board:
                     print square
                 break
+
+    ## instead we could have a row, column and box function and a generalized
+    ## neighbor function that checks and doesn't return the original square
 
     def row_neighbors(self, square):
         """Generate the squares in the same row as the given square"""
@@ -323,6 +337,24 @@ class Sudoku:
             output.close()
 
 
+    def str2(self):
+        """returns ascii art rendering of sudoku"""
+        box_size = int(sqrt(self.n))
+        try:
+            output = cStringIO.StringIO()
+
+            for i in range(0,box_size):
+                for j in range(0,box_size):
+                    output.write("%d,%d" % (i, j))
+                output.write("+".join( ['-' * box_size] * box_size ))
+                output.write("\n")
+
+            return output.getvalue()
+        finally:
+            output.close()
+
+
+
 def read_sudoku_from_file(filename):
     """Read a sudoku puzzle from a text file."""
     board = []
@@ -343,6 +375,139 @@ def read_sudoku_from_file(filename):
     return Sudoku(row,ncol,board)
 
 
+
+
+from collections import namedtuple
+
+Application = namedtuple('Application', ['rule', 'square', 'new_values'])
+
+
+def solved(squares):
+    for square in squares:
+        if len(square.values)==1:
+            yield square
+
+def unsolved(squares):
+    for square in squares:
+        if len(square.values) > 1:
+            yield square
+
+def values_of(squares):
+    values = set([])
+    for square in squares:
+        values = values.union(square.values)
+    return values
+
+
+def subsets(s):
+    """Given a set s, return all proper subsets of s"""
+    if len(s)==0:
+        return [[]]
+    rest = s[1:]
+    results = subsets(rest)
+    results.extend([[s[0]] + s for s in results])
+    return results
+
+
+def apply_rule(sudoku, rule, history=[]):
+    for square in unsolved(sudoku.board):
+        application = rule(sudoku, square)
+        if application:
+            square.set_possible_values(application.new_values)
+            history.append(application)
+    return history
+
+
+def apply_rules(sudoku, rules, history=[]):
+    ## while not solved and we're still making progress, keep applying rules
+    i = 1
+    while not sudoku.solved():
+        progress = []
+        for rule in rules:
+            apply_rule(sudoku, rule, progress)
+        if progress:
+            history.append(progress)
+            print '\n\niteration %d' % i
+            print '-' * 80
+            for application in progress:
+                print application
+        else:
+            break
+        i += 1
+    return history
+
+
+## RULES
+## ------------------------------------------------------------
+
+def eliminate_by(neighbors, description):
+    """
+    Return a function of the form `f(sudoku, square)` that eliminates from
+    `square` the values of all solved squares returned by the neighbors
+    function, which may be Sudoku.row_neighbors, Sudoku.column_neighbors or
+    Sudoku.box_neighbors.
+
+    The returned function takes a sudoku and a specific square and returns an
+    Application object, which may then be applied to reduce the possible values
+    of the square.
+
+    example::
+
+        eliminate_by_row = eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors')
+        application = eliminate_by_row(sudoku, square)
+
+    """
+    def eliminate(sudoku, square):
+        """
+        Take a sudoku and a sqaure. Return an Application object that
+        eliminates some possible values from the square.
+        """
+        values = values_of(solved(neighbors(sudoku, square)))
+        values_to_eliminate = square.values.intersection(values)
+        if len(values_to_eliminate) > 0:
+            return Application(
+                "Eliminated {values} from {square} {description}"
+                    .format(
+                        values=','.join([str(i) for i in values]),
+                        square=','.join([str(square.i), str(square.j)]),
+                        description=description
+                    ),
+               square,
+               square.values - values_to_eliminate)
+    return eliminate
+
+def deduce_by(neighbors, description):
+    def deduce(sudoku, square):
+        values = values_of(neighbors(sudoku, square))
+        values_only_possible_in_this_square = square.values - values
+        if len(values_only_possible_in_this_square)==1:
+            return Application(
+                "Deduced {square} holds {value} {description}"
+                    .format(
+                        square=','.join([str(square.i), str(square.j)]),
+                        value=list(values_only_possible_in_this_square)[0],
+                        description=description
+                    ),
+                square,
+                values_only_possible_in_this_square)
+        return None
+    return deduce
+
+## ------------------------------------------------------------
+
+
+def solve(sudoku):
+    rules = []
+    rules.append(eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors'))
+    rules.append(eliminate_by(Sudoku.column_neighbors, description='by solved column neighbors'))
+    rules.append(eliminate_by(Sudoku.box_neighbors, description='by box column neighbors'))
+    rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
+    rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
+    rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
+
+    history = apply_rules(sudoku, rules)
+
+
 def main():
     # handle command line arguments
     parser = argparse.ArgumentParser(
@@ -356,7 +521,7 @@ def main():
 
     # Read a sudoku puzzle from a text file and solve it.
     sudoku = read_sudoku_from_file(args.filename)
-    sudoku.verbose = args.verbose
+
     print("\n%d squares given.\n" % (sudoku.count_solved_squares()))
     print(sudoku)
     sudoku.solve()
