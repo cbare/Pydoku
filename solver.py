@@ -14,12 +14,7 @@ import argparse
 from itertools import chain
 
 
-def sort_unique(l):
-    result = list(set(l))
-    result.sort()
-    return result
-
-class Square:
+class Square(object):
     """Represent one square of a sudoku puzzle. The square is at position
     i,j on the board. Square.value will be 0 if the value is unknown and
     possible values will be in Square.values.
@@ -39,27 +34,6 @@ class Square:
         else:
             return "square(%d,%d) = {%s}" % (self.i, self.j, ",".join([str(n) for n in self.values]))
 
-    def eliminate(self, n):
-        """Take either an integer or a list. Eliminate those values from
-        the possible values for this square. It there is only one possibility
-        remaining, the square is solved and square.value will be assigned.
-        """
-        result = []
-        if (type(n)==list or type(n)==set):
-            for nn in n:
-                if (nn in self.values):
-                    self.values.remove(nn)
-                    result.append(nn)
-        else:
-            if (n in self.values):
-                self.values.remove(n)
-                result.append(n)
-
-        if len(self.values)==1:
-            self.value = list(self.values)[0]
-
-        return result
-    
     def set_value(self, value):
         self.value = value
         self.values = {value}
@@ -68,6 +42,13 @@ class Square:
         self.values = values
         if len(values)==1:
             self.value = list(values)[0]
+
+    def eliminate(self, values):
+        eliminated = self.values.intersection(values)
+        self.values -= values
+        if len(values)==1:
+            self.value = list(values)[0]
+        return eliminated
 
     def npossibilities(self):
         """Return the number of possible values for this square."""
@@ -80,7 +61,7 @@ class Square:
         return len(self.values) > 1
 
 
-class Sudoku:
+class Sudoku(object):
     """Represent an n by m sudoku board."""
     def __init__(self, n=9, m=9, board=[]):
         self.n = n
@@ -96,69 +77,6 @@ class Sudoku:
             if not square.solved():
                 return False
         return True
-
-    def solve(self):
-        unsolved = 0
-        for square in self.board:
-            if not square.solved():
-                unsolved += 1
-
-        iteration = 0
-        while (unsolved > 0):
-            iteration += 1
-            progress = 0
-            if self.verbose : print "iteration %d, %d unsolved squares remaining." % (iteration, unsolved)
-            for square in self.board:
-                if not square.solved():
-                    
-                    if self.verbose : print "  " + str(square)
-                    
-                    print str(self)
-                    
-                    # eliminate solved numbers in row, column, box
-                    eliminated = []
-                    eliminated.extend( self.eliminate(square, self.row_neighbors(square)) )
-                    eliminated.extend( self.eliminate(square, self.column_neighbors(square)) )
-                    eliminated.extend( self.eliminate(square, self.box_neighbors(square)) )
-                    
-                    if self.verbose  and len(eliminated) > 0:
-                        print "    eliminated: {%s}" % (",".join([str(n) for n in sort_unique(eliminated)],))
-                        if square.unsolved():
-                            print "    " + str(square)
-                        progress += 1
-                    
-                    # deduce that this square is the only square in a row,
-                    # column or box that could hold a particular number
-                    self.deduce(square, self.row_neighbors(square))
-                    self.deduce(square, self.column_neighbors(square))
-                    self.deduce(square, self.box_neighbors(square))
-                    
-                    if square.solved():
-                        unsolved -= 1
-                        progress += 1
-                        if self.verbose : print "    >>>> solved: " + str(square)
-                    elif len(square.values)==0:
-                        print "warning: square with no possible values! " + str(square)
-
-            # TODO properly mark solved squares in closed subsets methods
-            # TODO implement rule of 3
-            # TODO keep track of derivation for each square
-            
-            for row in self.rows():
-                progress += self.eliminate_by_closed_subsets(row)
-            for column in self.columns():
-                progress += self.eliminate_by_closed_subsets(column)
-            for box in self.boxes():
-                progress += self.eliminate_by_closed_subsets(box)
-            
-            progress += len(self.eliminate_by_intersection())
-
-            # we should always make progress. If not, something's wrong.
-            if (progress == 0):
-                print("...uh-oh, not making progress!")
-                for square in self.board:
-                    print square
-                break
 
     ## instead we could have a row, column and box function and a generalized
     ## neighbor function that checks and doesn't return the original square
@@ -183,40 +101,6 @@ class Sudoku:
             for j in range(box_j, box_j+3):
                 if (not (i==square.i and j==square.j)):
                     yield self.get_square(i, j)
-
-
-    def eliminate(self, square, neighbors):
-        """Every row, column and box must have at most one of each
-        number, so eliminate any number that's already solved in a
-        neighboring square in the same row, column, box.
-        """
-        eliminated = []
-        for neighbor in neighbors:
-            if neighbor.solved():
-                eliminated.extend( square.eliminate(neighbor.value) )
-        return eliminated
-
-    def deduce(self, square, neigbors):
-        """Every row, column and box must have at least one of each
-        number, so if this square might hold a number that no
-        neighboring square could hold, deduce that this square does
-        hold that number.
-        """
-        if not square.solved():
-            original_possibilities = square.values
-            neighbors_possibilities = set()
-            possibilities = square.values
-            for neighbor in neigbors:
-                if neighbor.unsolved():
-                    possibilities = possibilities - neighbor.values
-                    neighbors_possibilities.update(neighbor.values)
-            if len(possibilities) == 1:
-                if self.verbose :
-                    print "    {%s} - {%s} = {%s}" % (
-                        ",".join([str(n) for n in original_possibilities]),
-                        ",".join([str(n) for n in neighbors_possibilities]),
-                        ",".join([str(n) for n in possibilities]))
-                square.set_value( list(possibilities)[0] )
     
     def eliminate_by_intersection(self):
         """If all squares in a box that could hold a number n are in the same row
@@ -302,10 +186,18 @@ class Sudoku:
                         progress += len(square.eliminate(possibilities))
         return progress
 
-    # todo
+
     def check_solution(self):
         """Check that our solution really has the sudoku properties"""
-        pass
+        if not self.solved():
+            return False
+        return all([
+                all([
+                    all([i in values_of(squares)
+                        for i in range(1,self.n+1)])
+                            for squares in f()])
+                                for f in [self.rows, self.columns, self.boxes]])
+
 
     def count_solved_squares(self):
         """How many solved squares are in the puzzle?"""
@@ -393,7 +285,7 @@ def unsolved(squares):
             yield square
 
 def values_of(squares):
-    values = set([])
+    values = set()
     for square in squares:
         values = values.union(square.values)
     return values
@@ -409,36 +301,11 @@ def subsets(s):
     return results
 
 
-def apply_rule(sudoku, rule, history=[]):
-    for square in unsolved(sudoku.board):
-        application = rule(sudoku, square)
-        if application:
-            square.set_possible_values(application.new_values)
-            history.append(application)
-    return history
-
-
-def apply_rules(sudoku, rules, history=[]):
-    ## while not solved and we're still making progress, keep applying rules
-    i = 1
-    while not sudoku.solved():
-        progress = []
-        for rule in rules:
-            apply_rule(sudoku, rule, progress)
-        if progress:
-            history.append(progress)
-            print '\n\niteration %d' % i
-            print '-' * 80
-            for application in progress:
-                print application
-        else:
-            break
-        i += 1
-    return history
-
-
 ## RULES
-## ------------------------------------------------------------
+##
+## Elimination by itself is sufficient for easy puzzles. Adding
+## deduction will find solutions for medium and even hard puzzles.
+## ------------------------------------------------------------------
 
 def eliminate_by(neighbors, description):
     """
@@ -457,55 +324,121 @@ def eliminate_by(neighbors, description):
         application = eliminate_by_row(sudoku, square)
 
     """
-    def eliminate(sudoku, square):
+    def eliminate(sudoku, history=[]):
         """
-        Take a sudoku and a sqaure. Return an Application object that
-        eliminates some possible values from the square.
+        Eliminate the values of solved neighboring squares from the possible values of
+        the square under consideration.
         """
-        values = values_of(solved(neighbors(sudoku, square)))
-        values_to_eliminate = square.values.intersection(values)
-        if len(values_to_eliminate) > 0:
-            return Application(
-                "Eliminated {values} from {square} {description}"
-                    .format(
-                        values=','.join([str(i) for i in values]),
-                        square=','.join([str(square.i), str(square.j)]),
-                        description=description
-                    ),
-               square,
-               square.values - values_to_eliminate)
+        for square in unsolved(sudoku.board):
+            values = values_of(solved(neighbors(sudoku, square)))
+            values_to_eliminate = square.values.intersection(values)
+            if len(values_to_eliminate) > 0:
+                history.append(
+                    Application(
+                        "Eliminated {values} from {square} {description}"
+                            .format(
+                                values=','.join([str(i) for i in values]),
+                                square=','.join([str(square.i), str(square.j)]),
+                                description=description
+                            ),
+                       square,
+                       square.values - values_to_eliminate))
+                square.eliminate(values_to_eliminate)
+        return history
     return eliminate
 
 def deduce_by(neighbors, description):
-    def deduce(sudoku, square):
-        values = values_of(neighbors(sudoku, square))
-        values_only_possible_in_this_square = square.values - values
-        if len(values_only_possible_in_this_square)==1:
-            return Application(
-                "Deduced {square} holds {value} {description}"
-                    .format(
-                        square=','.join([str(square.i), str(square.j)]),
-                        value=list(values_only_possible_in_this_square)[0],
-                        description=description
-                    ),
-                square,
-                values_only_possible_in_this_square)
-        return None
+    def deduce(sudoku, history=[]):
+        for square in unsolved(sudoku.board):
+            values = values_of(neighbors(sudoku, square))
+            values_only_possible_in_this_square = square.values - values
+            if len(values_only_possible_in_this_square)==1:
+                history.append(
+                    Application(
+                        "Deduced {square} holds {value} {description}"
+                            .format(
+                                square=','.join([str(square.i), str(square.j)]),
+                                value=list(values_only_possible_in_this_square)[0],
+                                description=description
+                            ),
+                        square,
+                        values_only_possible_in_this_square))
+                square.set_possible_values(values_only_possible_in_this_square)
+        return history
     return deduce
+
+def closed_subsets_by(containers):
+    def closed_subsets(sudoku, history=[]):
+        for container in containers(sudoku):
+            unsolved_squares = list(unsolved(container))
+            if len(unsolved_squares) > 2:
+                good_subsets = [ subset for subset \
+                    in subsets(unsolved_squares) \
+                    if len(subset) > 1 and len(subset) < len(unsolved_squares) ]
+                for subset in good_subsets:
+                    possibilities = values_of(subset)
+                    if len(possibilities) == len(subset):
+                        for square in unsolved_squares:
+                            if square not in subset:
+                                eliminated = square.eliminate(possibilities)
+                                if eliminated:
+                                    history.append(Application(
+                                        "Eliminated {%s} from %s by closed subset"
+                                            .format(
+                                                ",".join(eliminated),
+                                                ','.join([str(square.i), str(square.j)])
+                                            ), square, square.values))
+        return history
+    return closed_subsets
+
+rules = []
+rules.append(eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors'))
+rules.append(eliminate_by(Sudoku.column_neighbors, description='by solved column neighbors'))
+rules.append(eliminate_by(Sudoku.box_neighbors, description='by box column neighbors'))
+rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
+rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
+rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
 
 ## ------------------------------------------------------------
 
 
-def solve(sudoku):
-    rules = []
-    rules.append(eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors'))
-    rules.append(eliminate_by(Sudoku.column_neighbors, description='by solved column neighbors'))
-    rules.append(eliminate_by(Sudoku.box_neighbors, description='by box column neighbors'))
-    rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
-    rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
-    rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
+def apply_rules(sudoku, rules, history=[]):
+    ## while not solved and we're still making progress, keep applying rules
+    i = 1
+    while not sudoku.solved():
+        progress = []
+        for rule in rules:
+            rule(sudoku, progress)
+        if progress:
+            history.append(progress)
+            print('\n\niteration %d' % i)
+            print('-' * 80)
+            for application in progress:
+                print application
+        else:
+            print('\n\n' + '-'*60)
+            print("...uh-oh, not making progress!")
+            break
+        i += 1
+    return history
 
-    history = apply_rules(sudoku, rules)
+
+class Solver(object):
+    """
+    A solver consists of a set of rules.
+    """
+    def __init__(self, rules=[]):
+        self.rules=rules
+        self.history = None
+
+    def add_rule(self, rule):
+        self.rules.append(rule)
+
+    def solve(self, sudoku):
+        self.history = apply_rules(sudoku, rules)
+        if sudoku.check_solution():
+            print("Found a solution!")
+        return self.history
 
 
 def main():
@@ -522,9 +455,11 @@ def main():
     # Read a sudoku puzzle from a text file and solve it.
     sudoku = read_sudoku_from_file(args.filename)
 
+    solver = Solver(rules)
+
     print("\n%d squares given.\n" % (sudoku.count_solved_squares()))
     print(sudoku)
-    sudoku.solve()
+    solver.solve(sudoku)
     print
     print(sudoku)
 
