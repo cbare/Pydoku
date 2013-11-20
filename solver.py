@@ -36,14 +36,19 @@ class Square(object):
     def __repr__(self):
         return self.__str__()
 
-    def set_value(self, value):
-        self.values = {value}
-
-    def get_value(self):
+    @property
+    def value(self):
+        """
+        The value in the square or '-' if the value is not yet determined
+        """
         if len(self.values) == 1:
             return list(self.values)[0]
         else:
             return '-'
+
+    @value.setter
+    def value(self, value):
+        self.values = {value}
 
     def set_possible_values(self, values):
         self.values = values
@@ -62,8 +67,6 @@ class Square(object):
 
     def unsolved(self):
         return len(self.values) > 1
-
-    value = property(get_value, set_value, None, 'The value in the square or "-" if the value is not yet determined')
 
 
 class Sudoku(object):
@@ -306,13 +309,20 @@ def values_of(squares):
 
 
 def subsets(s):
-    """Given a set s, return all proper subsets of s"""
+    """Given a set s, return all subsets of s"""
     if len(s)==0:
-        return [[]]
-    rest = s[1:]
+        return [()]
+    rest = list(s)
+    first = rest.pop()
     results = subsets(rest)
-    results.extend([[s[0]] + s for s in results])
+    results.extend([(first,) + s for s in results])
     return results
+
+def subsets_of_limited_cardinality(s, n, m):
+    """Given a set s, generate all subsets of s whose cardinality is at least n and < m"""
+    ## It would be cooler to construct these subsets directly, but here we
+    ## generate all subsets then filter for the those of requested cardinality.
+    return (subset for subset in subsets(s) if len(subset) >= n and len(subset) < m)
 
 
 ## RULES
@@ -351,7 +361,7 @@ def eliminate_by(neighbors, description):
                     Application(
                         "Eliminated {values} from {square} {description}"
                             .format(
-                                values=','.join([str(i) for i in values]),
+                                values=','.join([str(i) for i in values_to_eliminate]),
                                 square=','.join([str(square.i), str(square.j)]),
                                 description=description
                             ),
@@ -385,37 +395,33 @@ def closed_subsets_by(containers, description):
     def closed_subsets(sudoku, history=[]):
         for container in containers(sudoku):
             unsolved_squares = list(unsolved(container))
-            if len(unsolved_squares) > 2:
-                good_subsets = [ subset for subset \
-                    in subsets(unsolved_squares) \
-                    if len(subset) > 1 and len(subset) < len(unsolved_squares) ]
-                for subset in good_subsets:
-                    possibilities = values_of(subset)
-                    if len(possibilities) == len(subset):
-                        for square in unsolved_squares:
-                            if square not in subset:
-                                eliminated = square.eliminate(possibilities)
-                                if eliminated:
-                                    history.append(Application(
-                                        "Eliminated {values} from square by closed subset {description}"
-                                            .format(
-                                                values=",".join(eliminated),
-                                                square=','.join([str(square.i), str(square.j)]),
-                                                description=description
-                                            ), square, square.values))
+            for subset in subsets_of_limited_cardinality(unsolved_squares, 2, len(unsolved_squares)):
+                possibilities = values_of(subset)
+                if len(possibilities) == len(subset):
+                    for square in unsolved_squares:
+                        if square not in subset:
+                            eliminated = square.eliminate(possibilities)
+                            if eliminated:
+                                history.append(Application(
+                                    "Eliminated {values} from square by closed subset {description}"
+                                        .format(
+                                            values=",".join([str(e) for e in eliminated]),
+                                            square=','.join([str(square.i), str(square.j)]),
+                                            description=description
+                                        ), square, square.values))
         return history
     return closed_subsets
 
 rules = []
 rules.append(eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors'))
 rules.append(eliminate_by(Sudoku.column_neighbors, description='by solved column neighbors'))
-rules.append(eliminate_by(Sudoku.box_neighbors, description='by box column neighbors'))
+rules.append(eliminate_by(Sudoku.box_neighbors, description='by solved box neighbors'))
 rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
 rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
 rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
-# rules.append(closed_subsets_by(Sudoku.rows, description='in row'))
-# rules.append(closed_subsets_by(Sudoku.columns, description='in column'))
-# rules.append(closed_subsets_by(Sudoku.boxes, description='in box'))
+rules.append(closed_subsets_by(Sudoku.rows, description='in row'))
+rules.append(closed_subsets_by(Sudoku.columns, description='in column'))
+rules.append(closed_subsets_by(Sudoku.boxes, description='in box'))
 
 ## ------------------------------------------------------------
 
