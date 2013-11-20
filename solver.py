@@ -22,11 +22,10 @@ class Square(object):
     def __init__(self, i, j, value=0):
         self.i = i
         self.j = j
-        self.value = value
-        if value > 0:
-            self.values = {value}
-        else:
+        if value==0:
             self.values = {1,2,3,4,5,6,7,8,9}
+        else:
+            self.values = {value}
 
     def __str__(self):
         if self.solved():
@@ -34,20 +33,24 @@ class Square(object):
         else:
             return "square(%d,%d) = {%s}" % (self.i, self.j, ",".join([str(n) for n in self.values]))
 
+    def __repr__(self):
+        return self.__str__()
+
     def set_value(self, value):
-        self.value = value
         self.values = {value}
+
+    def get_value(self):
+        if len(self.values) == 1:
+            return list(self.values)[0]
+        else:
+            return '-'
 
     def set_possible_values(self, values):
         self.values = values
-        if len(values)==1:
-            self.value = list(values)[0]
 
     def eliminate(self, values):
         eliminated = self.values.intersection(values)
         self.values -= values
-        if len(values)==1:
-            self.value = list(values)[0]
         return eliminated
 
     def npossibilities(self):
@@ -59,6 +62,8 @@ class Square(object):
 
     def unsolved(self):
         return len(self.values) > 1
+
+    value = property(get_value, set_value, None, 'The value in the square or "-" if the value is not yet determined')
 
 
 class Sudoku(object):
@@ -229,18 +234,27 @@ class Sudoku(object):
             output.close()
 
 
-    def str2(self):
+    def details(self):
         """returns ascii art rendering of sudoku"""
         box_size = int(sqrt(self.n))
         try:
             output = cStringIO.StringIO()
-
-            for i in range(0,box_size):
-                for j in range(0,box_size):
-                    output.write("%d,%d" % (i, j))
-                output.write("+".join( ['-' * box_size] * box_size ))
-                output.write("\n")
-
+            for i in range(self.n):
+                output.write('\n')
+                if i > 0 and i % box_size == 0:
+                    output.write('-' * (self.n*self.n + self.n-1))
+                    output.write('\n')
+                for j in range(self.m):
+                    if j > 0:
+                        if j % box_size == 0:
+                            output.write('|')
+                        else:
+                            output.write(' ')
+                    values = self.get_square(i,j).values
+                    output.write(' ' * ((self.n - len(values))/2))
+                    output.write(''.join([str(value) for value in values]))
+                    output.write(' ' * (int(math.ceil((self.n - len(values))/2.0))))
+            output.write('\n')
             return output.getvalue()
         finally:
             output.close()
@@ -367,7 +381,7 @@ def deduce_by(neighbors, description):
         return history
     return deduce
 
-def closed_subsets_by(containers):
+def closed_subsets_by(containers, description):
     def closed_subsets(sudoku, history=[]):
         for container in containers(sudoku):
             unsolved_squares = list(unsolved(container))
@@ -383,10 +397,11 @@ def closed_subsets_by(containers):
                                 eliminated = square.eliminate(possibilities)
                                 if eliminated:
                                     history.append(Application(
-                                        "Eliminated {%s} from %s by closed subset"
+                                        "Eliminated {values} from square by closed subset {description}"
                                             .format(
-                                                ",".join(eliminated),
-                                                ','.join([str(square.i), str(square.j)])
+                                                values=",".join(eliminated),
+                                                square=','.join([str(square.i), str(square.j)]),
+                                                description=description
                                             ), square, square.values))
         return history
     return closed_subsets
@@ -398,6 +413,9 @@ rules.append(eliminate_by(Sudoku.box_neighbors, description='by box column neigh
 rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
 rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
 rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
+# rules.append(closed_subsets_by(Sudoku.rows, description='in row'))
+# rules.append(closed_subsets_by(Sudoku.columns, description='in column'))
+# rules.append(closed_subsets_by(Sudoku.boxes, description='in box'))
 
 ## ------------------------------------------------------------
 
@@ -414,7 +432,7 @@ def apply_rules(sudoku, rules, history=[]):
             print('\n\niteration %d' % i)
             print('-' * 80)
             for application in progress:
-                print application
+                print application.rule, application.square, application.new_values
         else:
             print('\n\n' + '-'*60)
             print("...uh-oh, not making progress!")
@@ -435,7 +453,7 @@ class Solver(object):
         self.rules.append(rule)
 
     def solve(self, sudoku):
-        self.history = apply_rules(sudoku, rules)
+        self.history = apply_rules(sudoku, self.rules)
         if sudoku.check_solution():
             print("Found a solution!")
         return self.history
