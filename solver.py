@@ -9,7 +9,7 @@
 
 import sys
 import cStringIO
-from math import sqrt
+from math import sqrt, ceil
 import argparse
 from itertools import chain
 
@@ -256,7 +256,7 @@ class Sudoku(object):
                     values = self.get_square(i,j).values
                     output.write(' ' * ((self.n - len(values))/2))
                     output.write(''.join([str(value) for value in values]))
-                    output.write(' ' * (int(math.ceil((self.n - len(values))/2.0))))
+                    output.write(' ' * (int(ceil((self.n - len(values))/2.0))))
             output.write('\n')
             return output.getvalue()
         finally:
@@ -391,6 +391,59 @@ def deduce_by(neighbors, description):
         return history
     return deduce
 
+    
+def box_row_intersection(sudoku, history=[]):
+    """If all squares in a box that could hold a number n are in the same row
+    or column, we can eliminate that n from the rest of that row or column"""
+    for row in chain(sudoku.rows(), sudoku.columns()):
+        for box in sudoku.boxes():
+            # take union of possibilities in of the squares in (row INTERSECT box)
+            # subtract from that the union of possibilities of the squares in (box - row)
+            # eliminate those possibilities from all squares in (row - box)
+            a = set()
+            for square in (set(row) & set(box)):
+                a.update(square.values)
+            if len(a) == 0: continue
+            b = set()
+            for square in (set(box) - set(row)):
+                b.update(square.values)
+            c = a - b
+            if len(c) == 0: continue
+            for square in (set(row) - set(box)):
+                e = square.eliminate(c)
+                if e:
+                    history.append(
+                        Application(
+                            "Eliminated {values} from {square} by box-row intersection"
+                                .format(
+                                    square=','.join([str(square.i), str(square.j)]),
+                                    values=','.join([str(i) for i in e])
+                                ),
+                            square,
+                            square.values))
+    return history
+
+def row_box_intersection(sudoku, history=[]):
+    for row in chain(sudoku.rows(), sudoku.columns()):
+        for box in sudoku.boxes():
+            a = values_of(set(row) & set(box))
+            b = values_of(set(row) - set(box))
+            c = a - b
+            if len(c) > 0:
+                for square in (set(box) - set(row)):
+                    e = square.eliminate(c)
+                    if e:
+                        history.append(
+                            Application(
+                                "Eliminated {values} from {square} by row-box intersection"
+                                    .format(
+                                        square=','.join([str(square.i), str(square.j)]),
+                                        values=','.join([str(i) for i in e])
+                                    ),
+                                square,
+                                square.values))
+    return history
+
 def closed_subsets_by(containers, description):
     def closed_subsets(sudoku, history=[]):
         for container in containers(sudoku):
@@ -403,7 +456,7 @@ def closed_subsets_by(containers, description):
                             eliminated = square.eliminate(possibilities)
                             if eliminated:
                                 history.append(Application(
-                                    "Eliminated {values} from square by closed subset {description}"
+                                    "Eliminated {values} from {square} by closed subset {description}"
                                         .format(
                                             values=",".join([str(e) for e in eliminated]),
                                             square=','.join([str(square.i), str(square.j)]),
@@ -419,6 +472,8 @@ rules.append(eliminate_by(Sudoku.box_neighbors, description='by solved box neigh
 rules.append(deduce_by(Sudoku.row_neighbors, description='by row'))
 rules.append(deduce_by(Sudoku.column_neighbors, description='by column'))
 rules.append(deduce_by(Sudoku.box_neighbors, description='by box'))
+rules.append(box_row_intersection)
+rules.append(row_box_intersection)
 rules.append(closed_subsets_by(Sudoku.rows, description='in row'))
 rules.append(closed_subsets_by(Sudoku.columns, description='in column'))
 rules.append(closed_subsets_by(Sudoku.boxes, description='in box'))
@@ -426,7 +481,7 @@ rules.append(closed_subsets_by(Sudoku.boxes, description='in box'))
 ## ------------------------------------------------------------
 
 
-def apply_rules(sudoku, rules, history=[]):
+def apply_rules(sudoku, rules, history=[], verbose=False):
     ## while not solved and we're still making progress, keep applying rules
     i = 1
     while not sudoku.solved():
@@ -439,6 +494,7 @@ def apply_rules(sudoku, rules, history=[]):
             print('-' * 80)
             for application in progress:
                 print application.rule, application.square, application.new_values
+            print sudoku.details()
         else:
             print('\n\n' + '-'*60)
             print("...uh-oh, not making progress!")
