@@ -110,31 +110,6 @@ class Sudoku(object):
                 if (not (i==square.i and j==square.j)):
                     yield self.get_square(i, j)
     
-    def eliminate_by_intersection(self):
-        """If all squares in a box that could hold a number n are in the same row
-        or column, we can eliminate that n from the rest of that row or column"""
-        eliminated = []
-        for row in chain(self.rows(), self.columns()):
-            for box in self.boxes():
-                # take union of possibilities in of the squares in (row INTERSECT box)
-                # subtract from that the union of possibilities of the squares in (box - row)
-                # eliminate those possibilities from all squares in (row - box)
-                a = set()
-                for square in (set(row) & set(box)):
-                    a.update(square.values)
-                if len(a) == 0: continue
-                b = set()
-                for square in (set(box) - set(row)):
-                    b.update(square.values)
-                c = a - b
-                if len(c) == 0: continue
-                for square in (set(row) - set(box)):
-                    e = square.eliminate(c)
-                    if len(e) > 0:
-                        print "@@@ eliminated " + str(eliminated)
-                        eliminated.extend(e)
-        return eliminated
-    
     def rows(self):
         for i in range(0, self.n):
             row = []
@@ -158,43 +133,6 @@ class Sudoku(object):
                         box.append(self.get_square(bi*int(sqrt(self.n))+i, bj*int(sqrt(self.m))+j))
                 yield box
 
-    def subsets(self, squares):
-        if len(squares)==0:
-            return [[]]
-        rest = []
-        rest.extend(squares[1:])
-        results = self.subsets(rest)
-        results.extend([[squares[0]] + s for s in results])
-        return results
-
-    # a closed set is my made-up term for a set of n squares
-    # that together can hold n possible values. Therefore, it's
-    # certain that the those squares contain those values in some
-    # order and we can eliminate those values from the remainder of
-    # the row, column or box.
-    # returns progress, if any or 0 to represent no progress
-    def eliminate_by_closed_subsets(self, squares):
-        progress = 0
-        unsolved_squares = [ square for square in squares if square.unsolved() ]
-        if len(unsolved_squares) <= 2: return progress
-        good_subsets = [ subset for subset
-            in self.subsets(unsolved_squares)
-            if len(subset) > 1 and len(subset) < len(unsolved_squares) ]
-        for subset in good_subsets:
-            possibilities = set()
-            for square in subset:
-                possibilities.update(square.values)
-            if len(possibilities) == len(subset):
-                if self.verbose: print("  eliminating {%s} by closed subsets from: " % (",".join([str(p) for p in possibilities])))
-                for s1 in subset:
-                    print "---> " + str(s1)
-                for square in unsolved_squares:
-                    if square not in subset:
-                        if self.verbose: print "    " + str(square)
-                        progress += len(square.eliminate(possibilities))
-        return progress
-
-
     def check_solution(self):
         """Check that our solution really has the sudoku properties"""
         if not self.solved():
@@ -205,7 +143,6 @@ class Sudoku(object):
                         for i in range(1,self.n+1)])
                             for squares in f()])
                                 for f in [self.rows, self.columns, self.boxes]])
-
 
     def count_solved_squares(self):
         """How many solved squares are in the puzzle?"""
