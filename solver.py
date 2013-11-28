@@ -71,17 +71,17 @@ class Square(object):
 
 class Sudoku(object):
     """Represent an n by m sudoku board."""
-    def __init__(self, n=9, m=9, board=[]):
+    def __init__(self, n=9, m=9, squares=[]):
         self.n = n
         self.m = m
-        self.board = board
+        self.squares = squares
         self.verbose = False
     
     def get_square(self, i, j):
-        return self.board[ i*self.m + j ]
+        return self.squares[ i*self.m + j ]
 
     def solved(self):
-        for square in self.board:
+        for square in self.squares:
             if not square.solved():
                 return False
         return True
@@ -147,7 +147,7 @@ class Sudoku(object):
     def count_solved_squares(self):
         """How many solved squares are in the puzzle?"""
         count = 0
-        for square in self.board:
+        for square in self.squares:
             if square.solved():
                 count += 1
         return count
@@ -230,7 +230,7 @@ class Record(object):
 
 def read_sudoku_from_file(filename):
     """Read a sudoku puzzle from a text file."""
-    board = []
+    squares = []
     row = 0
     ncol = 0
     with open(filename, 'r') as f:
@@ -241,11 +241,11 @@ def read_sudoku_from_file(filename):
                 ncol = len(line)
                 for col in range(0,ncol):
                     if (line[col].isdigit()):
-                        board.append(Square(row, col, value=int(line[col])))
+                        squares.append(Square(row, col, value=int(line[col])))
                     else:
-                        board.append(Square(row, col))
+                        squares.append(Square(row, col))
                 row += 1
-    return Sudoku(row,ncol,board)
+    return Sudoku(row,ncol,squares)
 
 
 def solved(squares):
@@ -320,7 +320,7 @@ def eliminate_by(neighbors, description):
         Eliminate the values of solved neighboring squares from the possible values of
         the square under consideration.
         """
-        for square in unsolved(sudoku.board):
+        for square in unsolved(sudoku.squares):
             values = values_of(solved(neighbors(sudoku, square)))
             values_to_eliminate = square.values.intersection(values)
             if len(values_to_eliminate) > 0:
@@ -338,7 +338,7 @@ def deduce_by(neighbors, description):
     Generate deduction functions for rows, columns and boxes.
     """
     def deduce(sudoku, history=[]):
-        for square in unsolved(sudoku.board):
+        for square in unsolved(sudoku.squares):
             values = values_of(neighbors(sudoku, square))
             values_only_possible_in_this_square = square.values - values
             if len(values_only_possible_in_this_square)==1:
