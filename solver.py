@@ -200,6 +200,33 @@ class Sudoku(object):
             output.close()
 
 
+def format_iterables_as_strings(dictionary):
+    result = {}
+    for key in dictionary:
+        try:
+            iterator = iter(dictionary[key])
+            result[key] = '{'+','.join([str(element) for element in iterator])+'}'
+        except TypeError:
+            result[key] = dictionary[key]
+    return result
+
+
+class Record(object):
+    """Record of one step in the solution of a sudoku."""
+    def __init__(self, description, rule, square, **kwargs):
+        self.description = description
+        self.rule = rule
+        self.square = square
+        self.i = square.i
+        self.j = square.j
+        ## copy the square's values at this point in time for the record
+        self.remaining_values = list(square.values)
+
+        self.__dict__.update(kwargs)
+
+    def __str__(self):
+        return self.description.format(**format_iterables_as_strings(self.__dict__))
+
 
 def read_sudoku_from_file(filename):
     """Read a sudoku puzzle from a text file."""
@@ -219,13 +246,6 @@ def read_sudoku_from_file(filename):
                         board.append(Square(row, col))
                 row += 1
     return Sudoku(row,ncol,board)
-
-
-
-
-from collections import namedtuple
-
-Application = namedtuple('Application', ['rule', 'square', 'new_values'])
 
 
 def solved(squares):
@@ -264,12 +284,22 @@ def subsets_of_limited_cardinality(s, n, m):
 
 ## RULES
 ##
+## A rule is a function that takes a sudoku and optionally a list of
+## Record objects for tracking history. The function mutates the
+## state of the sudoku and returns the history list with new Records
+## appended.
+##
+## Below are 2 types of functions, rules and rule generating functions
+## for cases where we need several variations on the same rule.
+##
 ## Elimination by itself is sufficient for easy puzzles. Adding
 ## deduction will find solutions for medium and even hard puzzles.
 ## ------------------------------------------------------------------
 
 def eliminate_by(neighbors, description):
     """
+    Generate elimination functions for rows, columns and boxes.
+
     Return a function of the form `f(sudoku, square)` that eliminates from
     `square` the values of all solved squares returned by the neighbors
     function, which may be Sudoku.row_neighbors, Sudoku.column_neighbors or
@@ -294,37 +324,30 @@ def eliminate_by(neighbors, description):
             values = values_of(solved(neighbors(sudoku, square)))
             values_to_eliminate = square.values.intersection(values)
             if len(values_to_eliminate) > 0:
-                history.append(
-                    Application(
-                        "Eliminated {values} from {square} {description}"
-                            .format(
-                                values=','.join([str(i) for i in values_to_eliminate]),
-                                square=','.join([str(square.i), str(square.j)]),
-                                description=description
-                            ),
-                       square,
-                       square.values - values_to_eliminate))
                 square.eliminate(values_to_eliminate)
+                history.append(Record(
+                    description="Eliminated {eliminated_values} from square({i},{j})={remaining_values} "+description,
+                    rule=eliminate,
+                    square=square,
+                    eliminated_values=values_to_eliminate))
         return history
     return eliminate
 
 def deduce_by(neighbors, description):
+    """
+    Generate deduction functions for rows, columns and boxes.
+    """
     def deduce(sudoku, history=[]):
         for square in unsolved(sudoku.board):
             values = values_of(neighbors(sudoku, square))
             values_only_possible_in_this_square = square.values - values
             if len(values_only_possible_in_this_square)==1:
-                history.append(
-                    Application(
-                        "Deduced {square} holds {value} {description}"
-                            .format(
-                                square=','.join([str(square.i), str(square.j)]),
-                                value=list(values_only_possible_in_this_square)[0],
-                                description=description
-                            ),
-                        square,
-                        values_only_possible_in_this_square))
                 square.set_possible_values(values_only_possible_in_this_square)
+                history.append(Record(
+                    description="Deduced square({i},{j}) = {value} "+description,
+                    rule=deduce,
+                    square=square,
+                    value=list(values_only_possible_in_this_square)[0]))
         return history
     return deduce
 
@@ -342,17 +365,13 @@ def box_row_intersection(sudoku, history=[]):
             c = a - b
             if len(c) > 0:
                 for square in (set(row) - set(box)):
-                    e = square.eliminate(c)
-                    if e:
-                        history.append(
-                            Application(
-                                "Eliminated {values} from {square} by box-row intersection"
-                                    .format(
-                                        square=','.join([str(square.i), str(square.j)]),
-                                        values=','.join([str(i) for i in e])
-                                    ),
-                                square,
-                                square.values))
+                    eliminated = square.eliminate(c)
+                    if eliminated:
+                        history.append(Record(
+                            description="Eliminated {eliminated_values} by box-row intersection from square({i},{j})={remaining_values}",
+                            rule=box_row_intersection,
+                            square=square,
+                            eliminated_values=eliminated))
     return history
 
 def row_box_intersection(sudoku, history=[]):
@@ -363,17 +382,13 @@ def row_box_intersection(sudoku, history=[]):
             c = a - b
             if len(c) > 0:
                 for square in (set(box) - set(row)):
-                    e = square.eliminate(c)
-                    if e:
-                        history.append(
-                            Application(
-                                "Eliminated {values} from {square} by row-box intersection"
-                                    .format(
-                                        square=','.join([str(square.i), str(square.j)]),
-                                        values=','.join([str(i) for i in e])
-                                    ),
-                                square,
-                                square.values))
+                    eliminated = square.eliminate(c)
+                    if eliminated:
+                        history.append(Record(
+                            description="Eliminated {eliminated_values} by row-box intersection from square({i},{j})={remaining_values}",
+                            rule=row_box_intersection,
+                            square=square,
+                            eliminated_values=eliminated))
     return history
 
 def closed_subsets_by(containers, description):
@@ -387,13 +402,11 @@ def closed_subsets_by(containers, description):
                         if square not in subset:
                             eliminated = square.eliminate(possibilities)
                             if eliminated:
-                                history.append(Application(
-                                    "Eliminated {values} from {square} by closed subset {description}"
-                                        .format(
-                                            values=",".join([str(e) for e in eliminated]),
-                                            square=','.join([str(square.i), str(square.j)]),
-                                            description=description
-                                        ), square, square.values))
+                                history.append(Record(
+                                    description="Eliminated {eliminated_values} by closed subset "+description+" from square({i},{j})={remaining_values}",
+                                    rule=closed_subsets,
+                                    square=square,
+                                    eliminated_values=eliminated))
         return history
     return closed_subsets
 
@@ -423,8 +436,8 @@ class Solver(object):
                 if verbose:
                     print('\n\niteration %d' % i)
                     print('-' * 80)
-                    for application in progress:
-                        print application.rule, application.square, application.new_values
+                    for record in progress:
+                        print record
                     if not sudoku.solved():
                         print sudoku.details()
             else:
