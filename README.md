@@ -18,5 +18,6 @@ One of the coolest sudoku solvers might be [Peter Norvig's sudoku.py](http://nor
 
 Sources of Sudoku puzzles include:
 
+- [Kjell.Ericson's Sudoku page](http://kjell.haxx.se/sudoku/)
+- [WebSudoku](http://www.websudoku.com/)
 
-- cbare
