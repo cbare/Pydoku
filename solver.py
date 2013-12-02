@@ -2,10 +2,9 @@
 # Sept. 2011
 # J. Christopher Bare
 
-# note: How this will work on sudoku's other than 9x9 is untested. It
-# won't work on underspecified puzzles - those with more than one solution.
-# Is it possible to have puzzles with a unique solution, but that requires
-# you to make a guess and back-track if you're wrong?
+# This Sudoku solver relies on logical rules to solve Sudoku puzzles. It doesn't
+# guess or back-track. It can solve all but the hardest puzzles.
+#================================================================================
 
 import sys
 import cStringIO
@@ -16,16 +15,13 @@ from itertools import chain
 
 class Square(object):
     """Represent one square of a sudoku puzzle. The square is at position
-    i,j on the board. Square.value will be 0 if the value is unknown and
-    possible values will be in Square.values.
+    i,j on the board and has a set of possible values. If its set of possible
+    values has been narrowed down to 1, the square is solved.
     """
-    def __init__(self, i, j, value=0):
+    def __init__(self, i, j, values):
         self.i = i
         self.j = j
-        if value==0:
-            self.values = {1,2,3,4,5,6,7,8,9}
-        else:
-            self.values = {value}
+        self.values = values
 
     def __str__(self):
         if self.solved():
@@ -103,10 +99,12 @@ class Sudoku(object):
 
     def box_neighbors(self, square):
         """Generate the squares in the same box as the given square"""
-        box_i = square.i / 3 * 3
-        box_j = square.j / 3 * 3
-        for i in range(box_i, box_i+3):
-            for j in range(box_j, box_j+3):
+        sqrtn = int(sqrt(self.n))
+        sqrtm = int(sqrt(self.m))
+        box_i = square.i / sqrtn * sqrtn
+        box_j = square.j / sqrtm * sqrtm
+        for i in range(box_i, box_i+sqrtn):
+            for j in range(box_j, box_j+sqrtm):
                 if (not (i==square.i and j==square.j)):
                     yield self.get_square(i, j)
     
@@ -241,24 +239,31 @@ def read_sudoku_from_file(filename):
                 ncol = len(line)
                 for col in range(0,ncol):
                     if (line[col].isdigit()):
-                        squares.append(Square(row, col, value=int(line[col])))
+                        squares.append(Square(row, col, values={int(line[col])}))
                     else:
-                        squares.append(Square(row, col))
+                        squares.append(Square(row, col, values=None))
                 row += 1
+    ## set values for unsolved squares
+    for square in squares:
+        if square.values is None:
+            square.values = set(range(1,ncol+1))
     return Sudoku(row,ncol,squares)
 
 
 def solved(squares):
+    """Given an iterable of squares, generate the subset of solved squares"""
     for square in squares:
         if len(square.values)==1:
             yield square
 
 def unsolved(squares):
+    """Given an iterable of squares, generate the subset of unsolved squares"""
     for square in squares:
         if len(square.values) > 1:
             yield square
 
 def values_of(squares):
+    """Return the set of possible values the could be held by the given squares"""
     values = set()
     for square in squares:
         values = values.union(square.values)
@@ -294,6 +299,9 @@ def subsets_of_limited_cardinality(s, n, m):
 ##
 ## Elimination by itself is sufficient for easy puzzles. Adding
 ## deduction will find solutions for medium and even hard puzzles.
+##
+## For more on using logical rules to solve Sudoku, visit:
+## sudokuwiki.org (with which I have no affiliation).
 ## ------------------------------------------------------------------
 
 def eliminate_by(neighbors, description):
@@ -338,6 +346,10 @@ def deduce_by(neighbors, description):
     Generate deduction functions for rows, columns and boxes.
     """
     def deduce(sudoku, history=[]):
+        """
+        If no other square in a row, column or box can hold a number,
+        deduce that _this_ square must hold it.
+        """
         for square in unsolved(sudoku.squares):
             values = values_of(neighbors(sudoku, square))
             values_only_possible_in_this_square = square.values - values
@@ -353,8 +365,10 @@ def deduce_by(neighbors, description):
 
     
 def box_row_intersection(sudoku, history=[]):
-    """If all squares in a box that could hold a number n are in the same row
-    or column, we can eliminate that n from the rest of that row or column"""
+    """
+    If all squares in a box that could hold a number n are in the same row
+    or column, we can eliminate that n from the rest of that row or column
+    """
     for row in chain(sudoku.rows(), sudoku.columns()):
         for box in sudoku.boxes():
             # take union of possibilities in of the squares in (row INTERSECT box)
@@ -375,6 +389,10 @@ def box_row_intersection(sudoku, history=[]):
     return history
 
 def row_box_intersection(sudoku, history=[]):
+    """
+    If all squares in a row or column that could hold a number n are in the same
+    box, we can eliminate that n from the rest of the box.
+    """
     for row in chain(sudoku.rows(), sudoku.columns()):
         for box in sudoku.boxes():
             a = values_of(set(row) & set(box))
@@ -392,6 +410,11 @@ def row_box_intersection(sudoku, history=[]):
     return history
 
 def closed_subsets_by(containers, description):
+    """
+    If a set of squares of size k contained within a row, column or box has only k
+    possible values, those values must be present in the subset is some order and
+    can therefore be elimineted from the remainder of the row, column or box.
+    """
     def closed_subsets(sudoku, history=[]):
         for container in containers(sudoku):
             unsolved_squares = list(unsolved(container))
@@ -415,7 +438,8 @@ def closed_subsets_by(containers, description):
 
 class Solver(object):
     """
-    A solver consists of a set of rules.
+    A solver consists of a set of logical rules that can be applied to a
+    sudoku to eliminate possibilities or deduce values.
     """
     def __init__(self, rules=[]):
         self.rules=rules
@@ -452,7 +476,7 @@ class Solver(object):
 
 
 def main():
-    # handle command line arguments
+    ## handle command line arguments
     parser = argparse.ArgumentParser(
         description="cbare's sudoku solver.",
         epilog="example: python solver.py sudoku.txt")
@@ -462,12 +486,13 @@ def main():
     parser.add_argument("filename")
     args = parser.parse_args()
 
-    # Read a sudoku puzzle from a text file and solve it.
+    ## Read a sudoku puzzle from a text file and solve it.
     sudoku = read_sudoku_from_file(args.filename)
 
     print("\n%d squares given.\n" % (sudoku.count_solved_squares()))
     print(sudoku)
 
+    ## create solver and add rules
     solver = Solver()
     solver.add_rule(eliminate_by(Sudoku.row_neighbors, description='by solved row neighbors'))
     solver.add_rule(eliminate_by(Sudoku.column_neighbors, description='by solved column neighbors'))

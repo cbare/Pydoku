@@ -1,0 +1,6 @@
+# http://sudokuplace.com/pdfs/4x4_hardest_1.pdf
+4---
+-2-1
+-4-2
+2---
+
