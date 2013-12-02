@@ -433,37 +433,6 @@ def closed_subsets_by(containers, description):
         return history
     return closed_subsets
 
-def subset_exclusion_by(containers, description):
-    """
-    Find a subset of squares of size k contained within a row, column or box.
-    If the possible values *out* of the subset subtracted from the possible
-    values *in* the subset leaves exactly k values, those values must be
-    present in the subset is some order and therefore any other values can be
-    eliminated from the squares in the subset.
-    """
-    def subset_exclusion(sudoku, history=[]):
-        for container in containers(sudoku):
-            unsolved_squares = list(unsolved(container))
-            for subset in subsets_of_limited_cardinality(unsolved_squares, 2, len(unsolved_squares)):
-                values_in_subset = values_of(subset)
-                remaining_values = values_in_subset - values_of(set(container) - set(subset))
-                excluded_values = values_in_subset - remaining_values
-                if len(remaining_values) == len(subset) and excluded_values:
-                    print "*" * 60
-                    print "values_in_subset = ", values_in_subset
-                    print "remaining_values = ", remaining_values
-                    print "excluded_values = ", excluded_values
-                    print "*" * 60
-                    for square in subset:
-                        print square
-                        square.values = square.values & remaining_values
-                        history.append(Record(
-                            description="Deduced by subset_exclusion "+description+" that square({i},{j})={remaining_values}",
-                            rule=subset_exclusion,
-                            square=square))
-        return history
-    return subset_exclusion
-
 ## ------------------------------------------------------------
 
 
@@ -536,9 +505,6 @@ def main():
     solver.add_rule(closed_subsets_by(Sudoku.rows, description='in row'))
     solver.add_rule(closed_subsets_by(Sudoku.columns, description='in column'))
     solver.add_rule(closed_subsets_by(Sudoku.boxes, description='in box'))
-    solver.add_rule(subset_exclusion_by(Sudoku.rows, description='in row'))
-    solver.add_rule(subset_exclusion_by(Sudoku.columns, description='in column'))
-    solver.add_rule(subset_exclusion_by(Sudoku.boxes, description='in box'))
 
     solver.solve(sudoku, verbose=args.verbose)
     print
