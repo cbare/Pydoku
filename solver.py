@@ -7,7 +7,7 @@
 #================================================================================
 
 import sys
-import cStringIO
+from io import StringIO
 from math import sqrt, ceil
 import argparse
 from itertools import chain
@@ -101,8 +101,8 @@ class Sudoku(object):
         """Generate the squares in the same box as the given square"""
         sqrtn = int(sqrt(self.n))
         sqrtm = int(sqrt(self.m))
-        box_i = square.i / sqrtn * sqrtn
-        box_j = square.j / sqrtm * sqrtm
+        box_i = square.i // sqrtn * sqrtn
+        box_j = square.j // sqrtm * sqrtm
         for i in range(box_i, box_i+sqrtn):
             for j in range(box_j, box_j+sqrtm):
                 if (not (i==square.i and j==square.j)):
@@ -154,7 +154,7 @@ class Sudoku(object):
         """returns ascii art rendering of sudoku"""
         box_size = int(sqrt(self.n))
         try:
-            output = cStringIO.StringIO()
+            output = StringIO()
             for i in range(0, self.n):
                 if i > 0 and i % box_size == 0:
                     for j in range(1,box_size):
@@ -176,7 +176,7 @@ class Sudoku(object):
         """returns ascii art rendering of sudoku"""
         box_size = int(sqrt(self.n))
         try:
-            output = cStringIO.StringIO()
+            output = StringIO()
             for i in range(self.n):
                 output.write('\n')
                 if i > 0 and i % box_size == 0:
@@ -458,12 +458,12 @@ class Solver(object):
             if progress:
                 self.history.append(progress)
                 if verbose:
-                    print('\n\niteration %d' % i)
+                    print(f'\n\niteration {i}')
                     print('-' * 80)
                     for record in progress:
-                        print record
+                        print(record)
                     if not sudoku.solved():
-                        print sudoku.details()
+                        print(sudoku.details())
             else:
                 print('\n\n' + '-'*60)
                 print("...uh-oh, not making progress!")
@@ -507,7 +507,7 @@ def main():
     solver.add_rule(closed_subsets_by(Sudoku.boxes, description='in box'))
 
     solver.solve(sudoku, verbose=args.verbose)
-    print
+    print()
     print(sudoku)
 
 
